@@ -2,7 +2,7 @@
 
 WEBHOOK="https://n8n.rogarnfels.cloud/webhook/net_check"
 SECRET="WAZUH_MAC_WEBHOOK_2026_SECRET"
-EMPRESA="Penasa"
+EMPRESA="Amenities"
 
 # 1. Descubrir red local (ajusta si quieres rango fijo)
 NETWORK=$(ip route | awk '/kernel/ {print $1}' | head -n 1)
