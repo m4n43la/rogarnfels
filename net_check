@@ -1,0 +1,30 @@
+#!/bin/bash
+
+WEBHOOK="https://n8n.rogarnfels.cloud/webhook/net_check"
+SECRET="WAZUH_MAC_WEBHOOK_2026_SECRET"
+EMPRESA="Penasa"
+
+# 1. Descubrir red local (ajusta si quieres rango fijo)
+NETWORK=$(ip route | awk '/kernel/ {print $1}' | head -n 1)
+
+# 2. Ping sweep ligero para poblar ARP
+for i in $(seq 1 254); do
+  ping -c 1 -W 1 ${NETWORK%.*}.$i >/dev/null 2>&1 &
+done
+wait
+
+# 3. Extraer MACs válidas
+MACS=$(ip neigh | awk '/lladdr/ {print $5}' | sort -u | tr '\n' ',' | sed 's/,$//')
+
+# 4. Crear JWT (sin librerías externas, usando python3 estándar)
+TOKEN=$(python3 - <<EOF
+import jwt
+print(jwt.encode({"empresa": "$EMPRESA"}, "$SECRET", algorithm="HS256"))
+EOF
+)
+
+# 5. Enviar al webhook
+curl -X POST "$WEBHOOK" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"empresa\":\"$EMPRESA\",\"macs\":$(echo $MACS | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().split(',')))")}"
