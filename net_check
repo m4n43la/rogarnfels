@@ -1,30 +1,47 @@
 #!/bin/bash
 
+set -euo pipefail
+
 WEBHOOK="https://n8n.rogarnfels.cloud/webhook/net_check"
 SECRET="WAZUH_MAC_WEBHOOK_2026_SECRET"
 EMPRESA="Amenities"
 
-# 1. Descubrir red local (ajusta si quieres rango fijo)
-NETWORK=$(ip route | awk '/kernel/ {print $1}' | head -n 1)
+# Detectar interfaz principal
+DEV=$(ip route | awk '/default/ {print $5; exit}')
 
-# 2. Ping sweep ligero para poblar ARP
-for i in $(seq 1 254); do
-  ping -c 1 -W 1 ${NETWORK%.*}.$i >/dev/null 2>&1 &
-done
-wait
+if [ -z "$DEV" ]; then
+    echo "No se pudo detectar la interfaz de red."
+    exit 1
+fi
 
-# 3. Extraer MACs válidas
-MACS=$(ip neigh | awk '/lladdr/ {print $5}' | sort -u | tr '\n' ',' | sed 's/,$//')
+# Obtener MACs mediante arp-scan
+MACS=$(
+sudo arp-scan --interface="$DEV" --localnet 2>/dev/null \
+| awk '/^[0-9]/ {print tolower($2)}' \
+| grep -E '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' \
+| sort -u
+)
 
-# 4. Crear JWT (sin librerías externas, usando python3 estándar)
-TOKEN=$(python3 - <<EOF
+if [ -z "$MACS" ]; then
+    echo "No se encontraron dispositivos."
+    exit 1
+fi
+
+# Crear JWT
+TOKEN=$(python3 <<EOF
 import jwt
 print(jwt.encode({"empresa": "$EMPRESA"}, "$SECRET", algorithm="HS256"))
 EOF
 )
 
-# 5. Enviar al webhook
-curl -X POST "$WEBHOOK" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"empresa\":\"$EMPRESA\",\"macs\":$(echo $MACS | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().split(',')))")}"
+# Convertir lista de MACs a JSON
+MACS_JSON=$(printf '%s\n' "$MACS" | python3 -c '
+import sys,json
+print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))
+')
+
+# Enviar
+curl -sS -X POST "$WEBHOOK" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"empresa\":\"$EMPRESA\",\"macs\":$MACS_JSON}"
