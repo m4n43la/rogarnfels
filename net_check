@@ -4,7 +4,7 @@ set -euo pipefail
 
 WEBHOOK="https://n8n.rogarnfels.cloud/webhook/net_check"
 SECRET="WAZUH_MAC_WEBHOOK_2026_SECRET"
-EMPRESA="Amenities"
+EMPRESA="Penasa"
 
 # Detectar interfaz principal
 DEV=$(ip route | awk '/default/ {print $5; exit}')
